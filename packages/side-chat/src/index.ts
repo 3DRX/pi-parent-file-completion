@@ -80,6 +80,151 @@ type ActiveSideChat = {
 };
 
 let activeSideChat: ActiveSideChat | undefined;
+let sideChatOpening = false;
+
+async function openSideChat(pi: ExtensionAPI, args: string, ctx: ExtensionCommandContext): Promise<void> {
+	if (!ctx.model) {
+		ctx.ui.notify("/side requires a selected model", "error");
+		return;
+	}
+
+	const { config, warnings } = loadSideChatConfig(ctx);
+	for (const warning of warnings) ctx.ui.notify(warning, "warning");
+
+	const parentSnapshot = snapshotParent(ctx);
+	const { manager: sideSessionManager, file: initialSideFile } = createSideSessionManager(ctx);
+	let sideSessionFile = initialSideFile;
+	let panel: SideChatPanel | undefined;
+	let overlayHandle: OverlayHandle | undefined;
+	let finishReason: PanelFinishReason = "close";
+	let merged = false;
+
+	const loader = new DefaultResourceLoader({
+		cwd: ctx.cwd,
+		agentDir: getAgentDir(),
+		noExtensions: true,
+		appendSystemPrompt: [SIDE_CHAT_SYSTEM_PROMPT],
+	});
+	await loader.reload();
+
+	const { session } = await createAgentSession({
+		cwd: ctx.cwd,
+		model: ctx.model,
+		thinkingLevel: pi.getThinkingLevel(),
+		modelRegistry: ctx.modelRegistry,
+		resourceLoader: loader,
+		sessionManager: sideSessionManager,
+		tools: pi.getActiveTools(),
+	});
+
+	try {
+		finishReason = await ctx.ui.custom<PanelFinishReason>(
+			(tui, theme, _keybindings, done) => {
+				panel = new SideChatPanel({
+					session,
+					config,
+					initialPrompt: args.trim() || undefined,
+					requestRender: () => tui.requestRender(),
+					tui,
+					editorTheme: {
+						borderColor: (s: string) => theme.fg("borderMuted", s),
+						selectList: getSelectListTheme(),
+					},
+					done,
+					onClose: () => {
+						finishReason = "close";
+					},
+					onHide: () => {
+						panel?.setTemporarilyHidden(true);
+						overlayHandle?.setHidden(true);
+						if (activeSideChat) activeSideChat.hidden = true;
+						ctx.ui.notify("Side chat hidden. Run /side to restore it; use /close inside side chat to delete it.", "info");
+					},
+					getTerminalRows: () => tui.terminal.rows,
+					getTerminalColumns: () => tui.terminal.columns,
+					onMerge: (request: MergeRequest) => {
+						if (config.merge.requireParentUnchanged && !parentUnchanged(ctx, parentSnapshot)) {
+							ctx.ui.notify(
+								"Cannot merge side chat: the main session changed after the side chat was opened.",
+								"error",
+							);
+							request.resolve(false);
+							return;
+						}
+
+						pi.sendMessage(
+							{
+								customType: "side-chat-merge",
+								content: buildMergeMarkdown(request.transcriptMarkdown),
+								display: true,
+								details: {
+									parentLeafId: parentSnapshot.leafId,
+									sideSessionFile: session.sessionFile,
+								},
+							},
+							{ triggerTurn: false },
+						);
+						merged = true;
+						finishReason = "merge";
+						request.resolve(true);
+					},
+				});
+
+				activeSideChat = {
+					panel,
+					handle: overlayHandle,
+					hidden: false,
+					restore: (prompt?: string) => {
+						panel?.setTemporarilyHidden(false);
+						overlayHandle?.setHidden(false);
+						overlayHandle?.focus();
+						if (activeSideChat) activeSideChat.hidden = false;
+						if (prompt) panel?.submitExternalPrompt(prompt);
+					},
+				};
+
+				return panel;
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "top-right",
+					width: config.panel.width,
+					maxHeight: config.panel.maxHeight,
+					margin: config.panel.margin,
+				},
+				onHandle: (handle) => {
+					overlayHandle = handle;
+					const active = activeSideChat;
+					if (active && active.panel === panel) active.handle = handle;
+				},
+			},
+		);
+	} finally {
+		if (activeSideChat?.panel === panel) activeSideChat = undefined;
+		panel?.dispose();
+		await session.abort().catch(() => undefined);
+		session.dispose();
+		sideSessionFile = session.sessionFile ?? sideSessionFile;
+		const shouldDelete = finishReason === "merge" ? config.session.deleteOnMerge : config.session.deleteOnClose;
+		if (shouldDelete) {
+			try {
+				await deleteSessionFile(sideSessionFile);
+			} catch (error) {
+				ctx.ui.notify(
+					`Side chat ${finishReason === "merge" ? "merged" : "closed"}, but failed to delete temporary session: ${error instanceof Error ? error.message : String(error)}`,
+					"warning",
+				);
+			}
+		}
+	}
+
+	if (merged) {
+		ctx.ui.notify("Side chat merged into the main session.", "info");
+	} else {
+		ctx.ui.notify("Side chat closed.", "info");
+	}
+}
 
 export default function sideChatExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("side", {
@@ -90,151 +235,26 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 				return;
 			}
 
+			const prompt = args.trim() || undefined;
 			const existing = activeSideChat;
 			if (existing) {
-				existing.restore(args.trim() || undefined);
+				existing.restore(prompt);
 				return;
 			}
 
-			if (!ctx.model) {
-				ctx.ui.notify("/side requires a selected model", "error");
+			if (sideChatOpening) {
+				ctx.ui.notify("Side chat is still opening…", "info");
 				return;
 			}
 
-			const { config, warnings } = loadSideChatConfig(ctx);
-			for (const warning of warnings) ctx.ui.notify(warning, "warning");
-
-			const parentSnapshot = snapshotParent(ctx);
-			const { manager: sideSessionManager, file: initialSideFile } = createSideSessionManager(ctx);
-			let sideSessionFile = initialSideFile;
-			let panel: SideChatPanel | undefined;
-			let overlayHandle: OverlayHandle | undefined;
-			let finishReason: PanelFinishReason = "close";
-			let merged = false;
-
-			const loader = new DefaultResourceLoader({
-				cwd: ctx.cwd,
-				agentDir: getAgentDir(),
-				noExtensions: true,
-				appendSystemPrompt: [SIDE_CHAT_SYSTEM_PROMPT],
-			});
-			await loader.reload();
-
-			const { session } = await createAgentSession({
-				cwd: ctx.cwd,
-				model: ctx.model,
-				thinkingLevel: pi.getThinkingLevel(),
-				modelRegistry: ctx.modelRegistry,
-				resourceLoader: loader,
-				sessionManager: sideSessionManager,
-				tools: pi.getActiveTools(),
-			});
-
-			try {
-				finishReason = await ctx.ui.custom<PanelFinishReason>(
-					(tui, theme, _keybindings, done) => {
-						panel = new SideChatPanel({
-							session,
-							config,
-							initialPrompt: args.trim() || undefined,
-							requestRender: () => tui.requestRender(),
-							tui,
-							editorTheme: {
-								borderColor: (s: string) => theme.fg("borderMuted", s),
-								selectList: getSelectListTheme(),
-							},
-							done,
-							onClose: () => {
-								finishReason = "close";
-							},
-							onHide: () => {
-								panel?.setTemporarilyHidden(true);
-								overlayHandle?.setHidden(true);
-								if (activeSideChat) activeSideChat.hidden = true;
-								ctx.ui.notify("Side chat hidden. Run /side to restore it; use /close inside side chat to delete it.", "info");
-							},
-							getTerminalRows: () => tui.terminal.rows,
-							getTerminalColumns: () => tui.terminal.columns,
-							onMerge: (request: MergeRequest) => {
-								if (config.merge.requireParentUnchanged && !parentUnchanged(ctx, parentSnapshot)) {
-									ctx.ui.notify(
-										"Cannot merge side chat: the main session changed after the side chat was opened.",
-										"error",
-									);
-									request.resolve(false);
-									return;
-								}
-
-								pi.sendMessage(
-									{
-										customType: "side-chat-merge",
-										content: buildMergeMarkdown(request.transcriptMarkdown),
-										display: true,
-										details: {
-											parentLeafId: parentSnapshot.leafId,
-											sideSessionFile: session.sessionFile,
-										},
-									},
-									{ triggerTurn: false },
-								);
-								merged = true;
-								finishReason = "merge";
-								request.resolve(true);
-							},
-						});
-						activeSideChat = {
-							panel,
-							handle: overlayHandle,
-							hidden: false,
-							restore: (prompt?: string) => {
-								panel?.setTemporarilyHidden(false);
-								overlayHandle?.setHidden(false);
-								overlayHandle?.focus();
-								if (activeSideChat) activeSideChat.hidden = false;
-								if (prompt) panel?.submitExternalPrompt(prompt);
-							},
-						};
-						return panel;
-					},
-					{
-						overlay: true,
-						overlayOptions: {
-							anchor: "top-right",
-							width: config.panel.width,
-							maxHeight: config.panel.maxHeight,
-							margin: config.panel.margin,
-						},
-						onHandle: (handle) => {
-							overlayHandle = handle;
-							const active = activeSideChat;
-							if (active && active.panel === panel) active.handle = handle;
-						},
-					},
-				);
-			} finally {
-				if (activeSideChat?.panel === panel) activeSideChat = undefined;
-				panel?.dispose();
-				await session.abort().catch(() => undefined);
-				session.dispose();
-				sideSessionFile = session.sessionFile ?? sideSessionFile;
-				const shouldDelete = finishReason === "merge" ? config.session.deleteOnMerge : config.session.deleteOnClose;
-				if (shouldDelete) {
-					try {
-						await deleteSessionFile(sideSessionFile);
-					} catch (error) {
-						ctx.ui.notify(
-							`Side chat ${finishReason === "merge" ? "merged" : "closed"}, but failed to delete temporary session: ${error instanceof Error ? error.message : String(error)}`,
-							"warning",
-						);
-					}
-				}
-			}
-
-			if (merged) {
-				ctx.ui.notify("Side chat merged into the main session.", "info");
-			} else {
-				ctx.ui.notify("Side chat closed.", "info");
-			}
+			sideChatOpening = true;
+			void openSideChat(pi, args, ctx)
+				.catch((error) => {
+					ctx.ui.notify(`Side chat failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+				})
+				.finally(() => {
+					sideChatOpening = false;
+				});
 		},
 	});
 }
