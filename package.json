@@ -1,42 +1,35 @@
 {
-  "name": "pi-parent-file-completion",
+  "name": "pi-extensions-lab",
   "version": "0.1.0",
-  "description": "Pi extension that adds fuzzy @../ file autocomplete outside the current working directory.",
+  "private": true,
+  "description": "Monorepo for Pi and AI-agent extensions by 3DRX.",
   "type": "module",
   "license": "MIT",
   "author": "3DRX",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/3DRX/pi-parent-file-completion.git"
+    "url": "git+https://github.com/3DRX/pi-extensions-lab.git"
   },
-  "homepage": "https://github.com/3DRX/pi-parent-file-completion#readme",
+  "homepage": "https://github.com/3DRX/pi-extensions-lab#readme",
   "bugs": {
-    "url": "https://github.com/3DRX/pi-parent-file-completion/issues"
+    "url": "https://github.com/3DRX/pi-extensions-lab/issues"
   },
   "keywords": [
     "pi-package",
     "pi",
     "pi-extension",
-    "autocomplete",
-    "file-search",
-    "fuzzy-search"
+    "ai-agent",
+    "extensions"
   ],
+  "packageManager": "pnpm@11.8.0",
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "packages/*/src/index.ts"
     ]
   },
-  "files": [
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
+    "typecheck": "pnpm -r typecheck",
+    "pack:dry-run": "pnpm -r --filter './packages/*' pack --dry-run"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.79.9",
