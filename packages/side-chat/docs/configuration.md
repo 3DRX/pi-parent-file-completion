@@ -105,7 +105,7 @@ Overlay margin, in terminal cells.
 Type: positive integer  
 Default: `120`
 
-Maximum rendered transcript lines in the side panel. The panel also has a bottom-sticky viewport, so long output shows the latest content by default. Older lines are hidden from the panel view, but they remain in the side session until it is closed or merged.
+Compatibility setting retained from earlier versions. Current side-chat rendering does not clip transcript scrollback to this value, so you can scroll back to the top of the current side-chat transcript. The panel remains bottom-sticky by default, so long output shows the latest content until you scroll up.
 
 ### `panel.maxInputLines`
 

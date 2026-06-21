@@ -80,6 +80,14 @@ function isCtrlArrowDown(data: string): boolean {
 	return matchesKey(data, Key.ctrl(Key.down)) || data === "\x1b[1;5B" || data === "\x1b[5B";
 }
 
+function isCtrlHome(data: string): boolean {
+	return matchesKey(data, Key.ctrl(Key.home)) || data === "\x1b[1;5H" || data === "\x1b[5H";
+}
+
+function isCtrlEnd(data: string): boolean {
+	return matchesKey(data, Key.ctrl(Key.end)) || data === "\x1b[1;5F" || data === "\x1b[5F";
+}
+
 function parseMouseWheel(data: string): MouseWheelEvent | undefined {
 	const sgr = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
 	if (sgr) {
@@ -175,6 +183,16 @@ export class SideChatPanel implements Component, Focusable {
 			return;
 		}
 
+		if (isCtrlHome(data)) {
+			this.scrollTranscriptToTop();
+			return;
+		}
+
+		if (isCtrlEnd(data)) {
+			this.scrollTranscriptToBottom();
+			return;
+		}
+
 		if (isCtrlArrowUp(data)) {
 			this.scrollTranscript(TRANSCRIPT_KEY_SCROLL_LINES);
 			return;
@@ -253,16 +271,15 @@ export class SideChatPanel implements Component, Focusable {
 			}
 		});
 
-		const cappedLines = rawLines.slice(-this.options.config.panel.maxTranscriptLines);
-		const maxOffset = Math.max(0, cappedLines.length - viewportHeight);
+		const maxOffset = Math.max(0, rawLines.length - viewportHeight);
 		this.transcriptScrollOffset = Math.max(0, Math.min(this.transcriptScrollOffset, maxOffset));
 
-		const end = cappedLines.length - this.transcriptScrollOffset;
+		const end = rawLines.length - this.transcriptScrollOffset;
 		const start = Math.max(0, end - viewportHeight);
-		const visible = cappedLines.slice(start, end);
+		const visible = rawLines.slice(start, end);
 
 		if (start > 0 && visible.length > 0) visible[0] = `… ${start} earlier line(s) hidden`;
-		if (end < cappedLines.length && visible.length > 0) visible[visible.length - 1] = `… ${cappedLines.length - end} later line(s) hidden`;
+		if (end < rawLines.length && visible.length > 0) visible[visible.length - 1] = `… ${rawLines.length - end} later line(s) hidden`;
 		return [...visible, ...Array.from({ length: viewportHeight - visible.length }, () => "")];
 	}
 
@@ -315,6 +332,16 @@ export class SideChatPanel implements Component, Focusable {
 		this.options.requestRender();
 	}
 
+	private scrollTranscriptToTop(): void {
+		this.transcriptScrollOffset = Number.MAX_SAFE_INTEGER;
+		this.options.requestRender();
+	}
+
+	private scrollTranscriptToBottom(): void {
+		this.transcriptScrollOffset = 0;
+		this.options.requestRender();
+	}
+
 	private isMouseWithinPanel(mouseX: number, mouseY: number): boolean {
 		if (this.lastRenderWidth <= 0 || this.lastRenderHeight <= 0) return false;
 		const termWidth = Math.max(1, this.options.getTerminalColumns());
@@ -342,7 +369,7 @@ export class SideChatPanel implements Component, Focusable {
 					"/abort  abort the current side response",
 					"/bottom jump to latest transcript content",
 					"/help   show this help",
-					"Keys: ↑/↓ browse input history, Ctrl+↑/Ctrl+↓ scroll transcript, mouse wheel scrolls when hovering the panel.",
+					"Keys: ↑/↓ browse input history; Ctrl+↑/Ctrl+↓ scroll transcript; Ctrl+Home/Ctrl+End jump transcript; mouse wheel scrolls when hovering the panel.",
 				].join("\n"));
 				break;
 			case "merge":
@@ -358,7 +385,7 @@ export class SideChatPanel implements Component, Focusable {
 				await this.abort();
 				break;
 			case "bottom":
-				this.transcriptScrollOffset = 0;
+				this.scrollTranscriptToBottom();
 				break;
 			default:
 				this.addSystem(`Unknown side-chat command: /${command}. Type /help.`);

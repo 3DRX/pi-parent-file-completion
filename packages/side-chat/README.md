@@ -20,7 +20,7 @@ The extension creates a real Pi branched session from the current conversation, 
 - Assistant and user messages render as Markdown with syntax-highlighted code blocks.
 - The input area uses Pi's native editor component, so paste, dictation-style insertion, cursor movement, and multiline editing work like Pi's main editor.
 - Up/down arrows browse previous/following side-chat inputs, like Pi's main editor.
-- Ctrl+Up/Ctrl+Down and mouse-wheel scrolling over the panel control transcript scrollback; `/bottom` jumps back to the latest content.
+- Ctrl+Up/Ctrl+Down and mouse-wheel scrolling over the panel control transcript scrollback; Ctrl+Home/Ctrl+End jump to the top/bottom, and `/bottom` jumps back to the latest content.
 - The side chat is ephemeral: its temporary session file is deleted on close/merge by default.
 - Merge is only allowed when the main session has not changed since the side chat opened.
 
