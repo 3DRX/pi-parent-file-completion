@@ -18,6 +18,18 @@ Project-local config:
 
 Project-local config is only read when the project is trusted by Pi. Project values override global values.
 
+## Default population and partial config
+
+The extension merges user config with defaults. You may write only the fields you want to override.
+
+When `/side` loads configuration:
+
+- If the global config file is missing, it is created with all default values.
+- If the global config file contains only a subset of fields, it is rewritten as the full normalized config after applying your overrides.
+- Project-local config files are not created automatically, but if a trusted project already has one, it is also rewritten as a full normalized effective config.
+
+This keeps the configuration explicit while still allowing users to start with small partial JSON snippets.
+
 ## Default config
 
 ```json
@@ -123,7 +135,7 @@ The extension snapshots the main session file, leaf id, and entry count when `/s
 
 ## Notes
 
-- Unknown keys are ignored.
-- Invalid values fall back to defaults.
+- Unknown keys are ignored and removed when the file is normalized.
+- Invalid values fall back to defaults when the file is normalized.
 - Project-local config requires Pi project trust.
 - Side chats are intended to be ephemeral; disabling deletion is mainly useful for debugging.

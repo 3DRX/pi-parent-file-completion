@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { CONFIG_DIR_NAME, getAgentDir, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type SideChatConfig = {
@@ -113,6 +113,20 @@ function readJson(path: string): unknown | undefined {
 	return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function serializeConfig(config: SideChatConfig): string {
+	return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+function writeConfigIfChanged(path: string, config: SideChatConfig): void {
+	const next = serializeConfig(config);
+	if (existsSync(path)) {
+		const current = readFileSync(path, "utf8");
+		if (current === next) return;
+	}
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, next, "utf8");
+}
+
 export function getConfigPaths(ctx: ExtensionContext): { global: string; project: string } {
 	return {
 		global: join(getAgentDir(), "pi-extensions-lab", "side-chat.json"),
@@ -125,16 +139,34 @@ export function loadSideChatConfig(ctx: ExtensionContext): { config: SideChatCon
 	const warnings: string[] = [];
 	let config = DEFAULT_CONFIG;
 
-	for (const [scope, path] of [
-		["global", paths.global] as const,
-		["project", paths.project] as const,
-	]) {
-		if (scope === "project" && !ctx.isProjectTrusted()) continue;
+	try {
+		const data = readJson(paths.global);
+		if (data !== undefined) config = mergeConfig(config, data);
+
+		// Keep the global config explicit. If the file is missing, create it with
+		// defaults. If it contains a partial config, write back the normalized
+		// default+user merge so users can see every available option.
+		writeConfigIfChanged(paths.global, config);
+	} catch (error) {
+		warnings.push(
+			`Failed to load or populate global side-chat config at ${paths.global}: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+
+	if (ctx.isProjectTrusted()) {
 		try {
-			const data = readJson(path);
-			if (data !== undefined) config = mergeConfig(config, data);
+			const data = readJson(paths.project);
+			if (data !== undefined) {
+				config = mergeConfig(config, data);
+				// Do not auto-create project config files. If a trusted project already
+				// has one, normalize it against the effective config so missing fields
+				// are visible while preserving global defaults and overrides.
+				writeConfigIfChanged(paths.project, config);
+			}
 		} catch (error) {
-			warnings.push(`Failed to load ${scope} side-chat config at ${path}: ${error instanceof Error ? error.message : String(error)}`);
+			warnings.push(
+				`Failed to load or populate project side-chat config at ${paths.project}: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
 	}
 
