@@ -13,7 +13,7 @@ The extension creates a real Pi branched session from the current conversation, 
 
 ## Behavior
 
-- `/side` opens a right-side overlay panel.
+- `/side` opens a top-aligned panel flush with the right edge of the terminal.
 - `/side <prompt>` opens the panel and immediately sends `<prompt>` to the side agent.
 - The side session is forked from the current active branch using Pi's session tree APIs.
 - The side agent receives additional system instructions that bias it toward read-only exploration.
@@ -66,10 +66,10 @@ Default configuration:
 {
   "panel": {
     "width": "50%",
-    "height": "80%",
+    "height": "100%",
     "minHeight": 18,
-    "maxHeight": "95%",
-    "margin": 1,
+    "maxHeight": "100%",
+    "margin": 0,
     "maxTranscriptLines": 120,
     "maxInputLines": 5
   },

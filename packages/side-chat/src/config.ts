@@ -24,10 +24,10 @@ export type SideChatConfig = {
 const DEFAULT_CONFIG: SideChatConfig = {
 	panel: {
 		width: "50%",
-		height: "80%",
+		height: "100%",
 		minHeight: 18,
-		maxHeight: "95%",
-		margin: 1,
+		maxHeight: "100%",
+		margin: 0,
 		maxTranscriptLines: 120,
 		maxInputLines: 5,
 	},
@@ -42,13 +42,44 @@ const DEFAULT_CONFIG: SideChatConfig = {
 
 type JsonObject = Record<string, unknown>;
 
-const LEGACY_AUTO_POPULATED_CONFIG: SideChatConfig = {
-	...DEFAULT_CONFIG,
-	panel: {
-		...DEFAULT_CONFIG.panel,
-		width: "30%",
+const LEGACY_AUTO_POPULATED_CONFIGS: SideChatConfig[] = [
+	{
+		panel: {
+			width: "30%",
+			height: "80%",
+			minHeight: 18,
+			maxHeight: "95%",
+			margin: 1,
+			maxTranscriptLines: 120,
+			maxInputLines: 5,
+		},
+		session: {
+			deleteOnClose: true,
+			deleteOnMerge: true,
+		},
+		merge: {
+			requireParentUnchanged: true,
+		},
 	},
-};
+	{
+		panel: {
+			width: "50%",
+			height: "80%",
+			minHeight: 18,
+			maxHeight: "95%",
+			margin: 1,
+			maxTranscriptLines: 120,
+			maxInputLines: 5,
+		},
+		session: {
+			deleteOnClose: true,
+			deleteOnMerge: true,
+		},
+		merge: {
+			requireParentUnchanged: true,
+		},
+	},
+];
 
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -135,7 +166,8 @@ function serializeConfig(config: SideChatConfig): string {
 }
 
 function isLegacyAutoPopulatedConfig(value: unknown): boolean {
-	return JSON.stringify(value) === JSON.stringify(LEGACY_AUTO_POPULATED_CONFIG);
+	const serialized = JSON.stringify(value);
+	return LEGACY_AUTO_POPULATED_CONFIGS.some((config) => serialized === JSON.stringify(config));
 }
 
 function migrateLegacyAutoPopulatedConfig(value: unknown): unknown {

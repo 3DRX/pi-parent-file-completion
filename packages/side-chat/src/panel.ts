@@ -350,7 +350,7 @@ export class SideChatPanel implements Component, Focusable {
 		const availableHeight = Math.max(1, termHeight - margin * 2);
 		const height = Math.min(this.lastRenderHeight, availableHeight);
 		const left = Math.max(0, termWidth - margin - this.lastRenderWidth);
-		const top = Math.max(margin, Math.min(margin + Math.floor((availableHeight - height) / 2), termHeight - margin - height));
+		const top = margin;
 		const x = mouseX - 1;
 		const y = mouseY - 1;
 		return x >= left && x < left + this.lastRenderWidth && y >= top && y < top + height;

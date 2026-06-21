@@ -36,10 +36,10 @@ This keeps the configuration explicit while still allowing users to start with s
 {
   "panel": {
     "width": "50%",
-    "height": "80%",
+    "height": "100%",
     "minHeight": 18,
-    "maxHeight": "95%",
-    "margin": 1,
+    "maxHeight": "100%",
+    "margin": 0,
     "maxTranscriptLines": 120,
     "maxInputLines": 5
   },
@@ -75,9 +75,9 @@ Examples:
 ### `panel.height`
 
 Type: number or percentage string  
-Default: `"80%"`
+Default: `"100%"`
 
-Target rendered panel height. Unlike `maxHeight`, this controls how tall the panel tries to be.
+Target rendered panel height. The default fills the available terminal height from the top edge down.
 
 ### `panel.minHeight`
 
@@ -89,16 +89,16 @@ Minimum rendered panel height.
 ### `panel.maxHeight`
 
 Type: number or percentage string  
-Default: `"95%"`
+Default: `"100%"`
 
 Maximum overlay height.
 
 ### `panel.margin`
 
 Type: non-negative integer  
-Default: `1`
+Default: `0`
 
-Overlay margin, in terminal cells.
+Overlay margin, in terminal cells. The default places the side panel flush with the top and right terminal edges.
 
 ### `panel.maxTranscriptLines`
 
@@ -143,10 +143,10 @@ The extension snapshots the main session file, leaf id, and entry count when `/s
 {
   "panel": {
     "width": "35%",
-    "height": "80%",
+    "height": "100%",
     "minHeight": 18,
-    "maxHeight": "90%",
-    "margin": 1,
+    "maxHeight": "100%",
+    "margin": 0,
     "maxTranscriptLines": 80,
     "maxInputLines": 5
   },

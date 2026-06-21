@@ -163,7 +163,7 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 					{
 						overlay: true,
 						overlayOptions: {
-							anchor: "right-center",
+							anchor: "top-right",
 							width: config.panel.width,
 							maxHeight: config.panel.maxHeight,
 							margin: config.panel.margin,
