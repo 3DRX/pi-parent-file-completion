@@ -1,6 +1,6 @@
 # pi-extensions-lab
 
-A pnpm monorepo for Pi and AI-agent extensions by [3DRX](https://github.com/3DRX).
+Pi agent extensions by [3DRX](https://github.com/3DRX).
 
 This repository is intended to hold small, focused extensions that make coding-agent workflows better. Each extension lives in `packages/<extension-name>` and can be developed, tested, and eventually shipped independently.
 
@@ -56,19 +56,4 @@ You can also load an individual extension file:
 
 ```bash
 pi -e /absolute/path/to/pi-extensions-lab/packages/parent-file-completion/src/index.ts
-```
-
-## Repository layout
-
-```text
-pi-extensions-lab/
-├── package.json
-├── pnpm-workspace.yaml
-├── tsconfig.base.json
-└── packages/
-    └── parent-file-completion/
-        ├── package.json
-        ├── README.md
-        └── src/
-            └── index.ts
 ```
