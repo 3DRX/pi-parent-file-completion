@@ -112,7 +112,7 @@ Maximum rendered transcript lines in the side panel. The panel also has a bottom
 Type: positive integer  
 Default: `5`
 
-Maximum number of wrapped input lines shown at the bottom of the panel.
+Maximum number of native editor lines shown at the bottom of the panel.
 
 ### `session.deleteOnClose`
 

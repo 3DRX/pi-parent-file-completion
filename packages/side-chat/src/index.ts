@@ -5,6 +5,7 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
+	getSelectListTheme,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { loadSideChatConfig } from "./config.ts";
@@ -113,12 +114,17 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 
 			try {
 				finishReason = await ctx.ui.custom<PanelFinishReason>(
-					(tui, _theme, _keybindings, done) => {
+					(tui, theme, _keybindings, done) => {
 						panel = new SideChatPanel({
 							session,
 							config,
 							initialPrompt: args.trim() || undefined,
 							requestRender: () => tui.requestRender(),
+							tui,
+							editorTheme: {
+								borderColor: (s: string) => theme.fg("borderMuted", s),
+								selectList: getSelectListTheme(),
+							},
 							done,
 							onClose: () => {
 								finishReason = "close";

@@ -1,6 +1,18 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
+import {
+	Editor,
+	Key,
+	matchesKey,
+	Markdown,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+	type Component,
+	type EditorTheme,
+	type Focusable,
+	type TUI,
+} from "@earendil-works/pi-tui";
 import type { SideChatConfig } from "./config.ts";
 
 export type PanelFinishReason = "close" | "merge";
@@ -24,13 +36,11 @@ type SideChatPanelOptions = {
 	onMerge: (request: MergeRequest) => void;
 	onClose: () => void;
 	getTerminalRows: () => number;
+	tui: TUI;
+	editorTheme: EditorTheme;
 };
 
 const SIDE_PROMPT = "side> ";
-
-function isPrintable(data: string): boolean {
-	return data.length > 0 && !data.startsWith("\x1b") && !/^[\x00-\x1f\x7f]$/.test(data);
-}
 
 function normalizeAssistantDelta(event: unknown): string | undefined {
 	if (!event || typeof event !== "object") return undefined;
@@ -52,17 +62,35 @@ function resolveSize(value: number | `${number}%`, total: number): number {
 	return Math.floor((total * percent) / 100);
 }
 
-export class SideChatPanel implements Component {
+export class SideChatPanel implements Component, Focusable {
 	private lines: ChatLine[] = [];
-	private input = "";
+	private readonly editor: Editor;
 	private running = false;
 	private currentAssistantIndex: number | undefined;
 	private unsubscribe?: () => void;
 	private sideEffects = false;
 	private closeConfirmationArmed = false;
 	private disposed = false;
+	private transcriptScrollOffset = 0;
+	private _focused = false;
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	set focused(value: boolean) {
+		this._focused = value;
+		this.editor.focused = value;
+	}
 
 	constructor(private readonly options: SideChatPanelOptions) {
+		this.editor = new Editor(options.tui, options.editorTheme, { paddingX: 0, autocompleteMaxVisible: 5 });
+		this.editor.onSubmit = (value) => {
+			this.editor.setText("");
+			void this.submit(value.trim());
+			this.options.requestRender();
+		};
+		this.editor.onChange = () => this.options.requestRender();
 		this.lines.push({ role: "system", text: "Side chat started. Type /help for local commands." });
 		this.unsubscribe = options.session.subscribe((event) => this.onSessionEvent(event));
 		if (options.initialPrompt?.trim()) {
@@ -81,24 +109,12 @@ export class SideChatPanel implements Component {
 		this.unsubscribe = undefined;
 	}
 
-	invalidate(): void {}
+	invalidate(): void {
+		this.editor.invalidate();
+	}
 
 	handleInput(data: string): void {
 		if (this.disposed) return;
-
-		if (matchesKey(data, Key.enter)) {
-			const value = this.input.trim();
-			this.input = "";
-			void this.submit(value);
-			this.options.requestRender();
-			return;
-		}
-
-		if (matchesKey(data, Key.backspace)) {
-			this.input = this.input.slice(0, -1);
-			this.options.requestRender();
-			return;
-		}
 
 		if (matchesKey(data, Key.ctrl("c"))) {
 			void this.abort();
@@ -110,16 +126,18 @@ export class SideChatPanel implements Component {
 			return;
 		}
 
-		if (matchesKey(data, Key.ctrl("u"))) {
-			this.input = "";
-			this.options.requestRender();
+		if (matchesKey(data, Key.pageUp)) {
+			this.scrollTranscript(10);
 			return;
 		}
 
-		if (isPrintable(data)) {
-			this.input += data;
-			this.options.requestRender();
+		if (matchesKey(data, Key.pageDown)) {
+			this.scrollTranscript(-10);
+			return;
 		}
+
+		this.editor.handleInput(data);
+		this.options.requestRender();
 	}
 
 	render(width: number): string[] {
@@ -161,7 +179,8 @@ export class SideChatPanel implements Component {
 
 	private renderTranscript(width: number, viewportHeight: number): string[] {
 		const rawLines: string[] = [];
-		for (const line of this.lines) {
+		this.lines.forEach((line, index) => {
+			if (index > 0 && (line.role === "user" || line.role === "assistant")) rawLines.push("");
 			const label = this.labelForRole(line.role);
 			const text = line.text || " ";
 			const rendered = this.renderMarkdownText(text, Math.max(1, width - visibleWidth(label)));
@@ -171,12 +190,19 @@ export class SideChatPanel implements Component {
 				rawLines.push(`${label}${rendered[0]}`);
 				for (const continuation of rendered.slice(1)) rawLines.push(`${" ".repeat(visibleWidth(label))}${continuation}`);
 			}
-		}
+		});
 
-		const max = Math.max(1, Math.min(this.options.config.panel.maxTranscriptLines, viewportHeight));
-		if (rawLines.length <= max) return [...rawLines, ...Array.from({ length: viewportHeight - rawLines.length }, () => "")];
-		const hiddenLine = `… ${rawLines.length - max + 1} earlier line(s) hidden`;
-		return [hiddenLine, ...rawLines.slice(-(max - 1))].slice(-viewportHeight);
+		const cappedLines = rawLines.slice(-this.options.config.panel.maxTranscriptLines);
+		const maxOffset = Math.max(0, cappedLines.length - viewportHeight);
+		this.transcriptScrollOffset = Math.max(0, Math.min(this.transcriptScrollOffset, maxOffset));
+
+		const end = cappedLines.length - this.transcriptScrollOffset;
+		const start = Math.max(0, end - viewportHeight);
+		const visible = cappedLines.slice(start, end);
+
+		if (start > 0 && visible.length > 0) visible[0] = `… ${start} earlier line(s) hidden`;
+		if (end < cappedLines.length && visible.length > 0) visible[visible.length - 1] = `… ${cappedLines.length - end} later line(s) hidden`;
+		return [...visible, ...Array.from({ length: viewportHeight - visible.length }, () => "")];
 	}
 
 	private renderMarkdownText(text: string, width: number): string[] {
@@ -185,13 +211,10 @@ export class SideChatPanel implements Component {
 	}
 
 	private renderInput(width: number): string[] {
-		const firstPrefix = SIDE_PROMPT;
-		const continuationPrefix = " ".repeat(visibleWidth(firstPrefix));
-		const wrapped = wrapTextWithAnsi(this.input || " ", Math.max(1, width - visibleWidth(firstPrefix)));
-		const lines = wrapped.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${line}`);
+		const editorLines = this.editor.render(width);
 		const maxInputLines = Math.max(1, this.options.config.panel.maxInputLines);
-		if (lines.length <= maxInputLines) return lines;
-		return [`${continuationPrefix}… ${lines.length - maxInputLines + 1} earlier input line(s)`, ...lines.slice(-(maxInputLines - 1))];
+		if (editorLines.length <= maxInputLines) return editorLines;
+		return [`… ${editorLines.length - maxInputLines + 1} earlier input line(s)`, ...editorLines.slice(-(maxInputLines - 1))];
 	}
 
 	private boxLine(content: string, innerWidth: number): string {
@@ -222,7 +245,13 @@ export class SideChatPanel implements Component {
 			await this.handleLocalCommand(value);
 			return;
 		}
+		this.transcriptScrollOffset = 0;
 		await this.submitPrompt(value);
+	}
+
+	private scrollTranscript(delta: number): void {
+		this.transcriptScrollOffset = Math.max(0, this.transcriptScrollOffset + delta);
+		this.options.requestRender();
 	}
 
 	private async handleLocalCommand(commandLine: string): Promise<void> {
@@ -236,7 +265,11 @@ export class SideChatPanel implements Component {
 					"/close  close and delete the side-chat session",
 					"/close! force close when side effects were detected",
 					"/abort  abort the current side response",
+					"/up     scroll transcript up",
+					"/down   scroll transcript down",
+					"/bottom jump to latest transcript content",
 					"/help   show this help",
+					"Keys: PageUp/PageDown also scroll transcript; arrows edit input.",
 				].join("\n"));
 				break;
 			case "merge":
@@ -250,6 +283,15 @@ export class SideChatPanel implements Component {
 				break;
 			case "abort":
 				await this.abort();
+				break;
+			case "up":
+				this.scrollTranscript(10);
+				break;
+			case "down":
+				this.scrollTranscript(-10);
+				break;
+			case "bottom":
+				this.transcriptScrollOffset = 0;
 				break;
 			default:
 				this.addSystem(`Unknown side-chat command: /${command}. Type /help.`);
