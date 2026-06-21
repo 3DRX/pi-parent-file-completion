@@ -36,9 +36,12 @@ This keeps the configuration explicit while still allowing users to start with s
 {
   "panel": {
     "width": "30%",
+    "height": "80%",
+    "minHeight": 18,
     "maxHeight": "95%",
     "margin": 1,
-    "maxTranscriptLines": 120
+    "maxTranscriptLines": 120,
+    "maxInputLines": 5
   },
   "session": {
     "deleteOnClose": true,
@@ -69,6 +72,20 @@ Examples:
 { "panel": { "width": 72 } }
 ```
 
+### `panel.height`
+
+Type: number or percentage string  
+Default: `"80%"`
+
+Target rendered panel height. Unlike `maxHeight`, this controls how tall the panel tries to be.
+
+### `panel.minHeight`
+
+Type: positive integer  
+Default: `18`
+
+Minimum rendered panel height.
+
 ### `panel.maxHeight`
 
 Type: number or percentage string  
@@ -88,7 +105,14 @@ Overlay margin, in terminal cells.
 Type: positive integer  
 Default: `120`
 
-Maximum rendered transcript lines in the side panel. Older lines are hidden from the panel view, but they remain in the side session until it is closed or merged.
+Maximum rendered transcript lines in the side panel. The panel also has a bottom-sticky viewport, so long output shows the latest content by default. Older lines are hidden from the panel view, but they remain in the side session until it is closed or merged.
+
+### `panel.maxInputLines`
+
+Type: positive integer  
+Default: `5`
+
+Maximum number of wrapped input lines shown at the bottom of the panel.
 
 ### `session.deleteOnClose`
 
@@ -119,9 +143,12 @@ The extension snapshots the main session file, leaf id, and entry count when `/s
 {
   "panel": {
     "width": "35%",
+    "height": "80%",
+    "minHeight": 18,
     "maxHeight": "90%",
     "margin": 1,
-    "maxTranscriptLines": 80
+    "maxTranscriptLines": 80,
+    "maxInputLines": 5
   },
   "session": {
     "deleteOnClose": true,

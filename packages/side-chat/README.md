@@ -17,6 +17,7 @@ The extension creates a real Pi branched session from the current conversation, 
 - `/side <prompt>` opens the panel and immediately sends `<prompt>` to the side agent.
 - The side session is forked from the current active branch using Pi's session tree APIs.
 - The side agent receives additional system instructions that bias it toward read-only exploration.
+- Assistant and user messages render as Markdown with syntax-highlighted code blocks.
 - The side chat is ephemeral: its temporary session file is deleted on close/merge by default.
 - Merge is only allowed when the main session has not changed since the side chat opened.
 
@@ -60,9 +61,12 @@ Default configuration:
 {
   "panel": {
     "width": "30%",
+    "height": "80%",
+    "minHeight": 18,
     "maxHeight": "95%",
     "margin": 1,
-    "maxTranscriptLines": 120
+    "maxTranscriptLines": 120,
+    "maxInputLines": 5
   },
   "session": {
     "deleteOnClose": true,

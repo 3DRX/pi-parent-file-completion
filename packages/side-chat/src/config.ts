@@ -5,9 +5,12 @@ import { CONFIG_DIR_NAME, getAgentDir, type ExtensionContext } from "@earendil-w
 export type SideChatConfig = {
 	panel: {
 		width: number | `${number}%`;
+		height: number | `${number}%`;
+		minHeight: number;
 		maxHeight: number | `${number}%`;
 		margin: number;
 		maxTranscriptLines: number;
+		maxInputLines: number;
 	};
 	session: {
 		deleteOnClose: boolean;
@@ -21,9 +24,12 @@ export type SideChatConfig = {
 const DEFAULT_CONFIG: SideChatConfig = {
 	panel: {
 		width: "30%",
+		height: "80%",
+		minHeight: 18,
 		maxHeight: "95%",
 		margin: 1,
 		maxTranscriptLines: 120,
+		maxInputLines: 5,
 	},
 	session: {
 		deleteOnClose: true,
@@ -87,12 +93,15 @@ function mergeConfig(base: SideChatConfig, patch: unknown): SideChatConfig {
 
 	if (isObject(patch.panel)) {
 		next.panel.width = parseDimension(patch.panel.width, next.panel.width);
+		next.panel.height = parseDimension(patch.panel.height, next.panel.height);
+		next.panel.minHeight = parsePositiveInt(patch.panel.minHeight, next.panel.minHeight);
 		next.panel.maxHeight = parseDimension(patch.panel.maxHeight, next.panel.maxHeight);
 		next.panel.margin = parseNonNegativeInt(patch.panel.margin, next.panel.margin);
 		next.panel.maxTranscriptLines = parsePositiveInt(
 			patch.panel.maxTranscriptLines,
 			next.panel.maxTranscriptLines,
 		);
+		next.panel.maxInputLines = parsePositiveInt(patch.panel.maxInputLines, next.panel.maxInputLines);
 	}
 	if (isObject(patch.session)) {
 		next.session.deleteOnClose = parseBoolean(patch.session.deleteOnClose, next.session.deleteOnClose);

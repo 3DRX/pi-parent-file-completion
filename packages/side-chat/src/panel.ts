@@ -1,5 +1,6 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import type { SideChatConfig } from "./config.ts";
 
 export type PanelFinishReason = "close" | "merge";
@@ -22,6 +23,7 @@ type SideChatPanelOptions = {
 	done: (reason: PanelFinishReason) => void;
 	onMerge: (request: MergeRequest) => void;
 	onClose: () => void;
+	getTerminalRows: () => number;
 };
 
 const SIDE_PROMPT = "side> ";
@@ -41,6 +43,13 @@ function toolNameFromEvent(event: unknown): string {
 	if (!event || typeof event !== "object") return "tool";
 	const e = event as { toolName?: unknown };
 	return typeof e.toolName === "string" ? e.toolName : "tool";
+}
+
+function resolveSize(value: number | `${number}%`, total: number): number {
+	if (typeof value === "number") return Math.floor(value);
+	const percent = Number(value.slice(0, -1));
+	if (!Number.isFinite(percent)) return total;
+	return Math.floor((total * percent) / 100);
 }
 
 export class SideChatPanel implements Component {
@@ -116,6 +125,18 @@ export class SideChatPanel implements Component {
 	render(width: number): string[] {
 		const safeWidth = Math.max(24, width);
 		const innerWidth = Math.max(1, safeWidth - 2);
+		const terminalRows = Math.max(1, this.options.getTerminalRows());
+		const configuredHeight = resolveSize(this.options.config.panel.height, terminalRows);
+		const configuredMaxHeight = resolveSize(this.options.config.panel.maxHeight, terminalRows);
+		const inputLines = this.renderInput(innerWidth);
+		const fixedRows = 6 + inputLines.length; // borders, title, separators, status, input
+		const targetHeight = Math.max(
+			fixedRows + 1,
+			Math.min(configuredMaxHeight, Math.max(this.options.config.panel.minHeight, configuredHeight)),
+		);
+		const transcriptHeight = Math.max(1, targetHeight - fixedRows);
+		const renderedTranscript = this.renderTranscript(innerWidth, transcriptHeight);
+
 		const lines: string[] = [];
 		const top = `╭${"─".repeat(innerWidth)}╮`;
 		const bottom = `╰${"─".repeat(innerWidth)}╯`;
@@ -123,34 +144,54 @@ export class SideChatPanel implements Component {
 		lines.push(this.boxLine("Side Chat · read-mostly · /help", innerWidth));
 		lines.push(this.boxLine("─".repeat(innerWidth), innerWidth));
 
-		const renderedTranscript = this.renderTranscript(innerWidth);
 		for (const line of renderedTranscript) lines.push(this.boxLine(line, innerWidth));
 
 		lines.push(this.boxLine("─".repeat(innerWidth), innerWidth));
 		const status = this.running ? "streaming… Ctrl+C abort" : "Enter send · /merge · /close";
 		lines.push(this.boxLine(status, innerWidth));
-		lines.push(this.boxLine(`${SIDE_PROMPT}${this.input}`, innerWidth));
+		for (const line of inputLines) lines.push(this.boxLine(line, innerWidth));
 		lines.push(bottom);
-		return lines.map((line) => truncateToWidth(line, safeWidth, ""));
+
+		while (lines.length < targetHeight) {
+			lines.splice(lines.length - 1, 0, this.boxLine("", innerWidth));
+		}
+
+		return lines.slice(0, targetHeight).map((line) => truncateToWidth(line, safeWidth, ""));
 	}
 
-	private renderTranscript(width: number): string[] {
+	private renderTranscript(width: number, viewportHeight: number): string[] {
 		const rawLines: string[] = [];
 		for (const line of this.lines) {
 			const label = this.labelForRole(line.role);
 			const text = line.text || " ";
-			const wrapped = wrapTextWithAnsi(text, Math.max(1, width - visibleWidth(label)));
-			if (wrapped.length === 0) {
+			const rendered = this.renderMarkdownText(text, Math.max(1, width - visibleWidth(label)));
+			if (rendered.length === 0) {
 				rawLines.push(label);
 			} else {
-				rawLines.push(`${label}${wrapped[0]}`);
-				for (const continuation of wrapped.slice(1)) rawLines.push(`${" ".repeat(visibleWidth(label))}${continuation}`);
+				rawLines.push(`${label}${rendered[0]}`);
+				for (const continuation of rendered.slice(1)) rawLines.push(`${" ".repeat(visibleWidth(label))}${continuation}`);
 			}
 		}
 
-		const max = this.options.config.panel.maxTranscriptLines;
-		if (rawLines.length <= max) return rawLines;
-		return [`… ${rawLines.length - max} earlier line(s) hidden`, ...rawLines.slice(-max)];
+		const max = Math.max(1, Math.min(this.options.config.panel.maxTranscriptLines, viewportHeight));
+		if (rawLines.length <= max) return [...rawLines, ...Array.from({ length: viewportHeight - rawLines.length }, () => "")];
+		const hiddenLine = `… ${rawLines.length - max + 1} earlier line(s) hidden`;
+		return [hiddenLine, ...rawLines.slice(-(max - 1))].slice(-viewportHeight);
+	}
+
+	private renderMarkdownText(text: string, width: number): string[] {
+		const markdown = new Markdown(text, 0, 0, getMarkdownTheme());
+		return markdown.render(width).flatMap((line) => wrapTextWithAnsi(line, width));
+	}
+
+	private renderInput(width: number): string[] {
+		const firstPrefix = SIDE_PROMPT;
+		const continuationPrefix = " ".repeat(visibleWidth(firstPrefix));
+		const wrapped = wrapTextWithAnsi(this.input || " ", Math.max(1, width - visibleWidth(firstPrefix)));
+		const lines = wrapped.map((line, index) => `${index === 0 ? firstPrefix : continuationPrefix}${line}`);
+		const maxInputLines = Math.max(1, this.options.config.panel.maxInputLines);
+		if (lines.length <= maxInputLines) return lines;
+		return [`${continuationPrefix}… ${lines.length - maxInputLines + 1} earlier input line(s)`, ...lines.slice(-(maxInputLines - 1))];
 	}
 
 	private boxLine(content: string, innerWidth: number): string {
