@@ -35,7 +35,7 @@ This keeps the configuration explicit while still allowing users to start with s
 ```json
 {
   "panel": {
-    "width": "30%",
+    "width": "50%",
     "height": "80%",
     "minHeight": 18,
     "maxHeight": "95%",
@@ -58,14 +58,14 @@ This keeps the configuration explicit while still allowing users to start with s
 ### `panel.width`
 
 Type: number or percentage string  
-Default: `"30%"`
+Default: `"50%"`
 
 Width of the right-side overlay panel.
 
 Examples:
 
 ```json
-{ "panel": { "width": "30%" } }
+{ "panel": { "width": "50%" } }
 ```
 
 ```json

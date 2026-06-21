@@ -23,7 +23,7 @@ export type SideChatConfig = {
 
 const DEFAULT_CONFIG: SideChatConfig = {
 	panel: {
-		width: "30%",
+		width: "50%",
 		height: "80%",
 		minHeight: 18,
 		maxHeight: "95%",
@@ -41,6 +41,14 @@ const DEFAULT_CONFIG: SideChatConfig = {
 };
 
 type JsonObject = Record<string, unknown>;
+
+const LEGACY_AUTO_POPULATED_CONFIG: SideChatConfig = {
+	...DEFAULT_CONFIG,
+	panel: {
+		...DEFAULT_CONFIG.panel,
+		width: "30%",
+	},
+};
 
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -126,6 +134,15 @@ function serializeConfig(config: SideChatConfig): string {
 	return `${JSON.stringify(config, null, 2)}\n`;
 }
 
+function isLegacyAutoPopulatedConfig(value: unknown): boolean {
+	return JSON.stringify(value) === JSON.stringify(LEGACY_AUTO_POPULATED_CONFIG);
+}
+
+function migrateLegacyAutoPopulatedConfig(value: unknown): unknown {
+	if (!isLegacyAutoPopulatedConfig(value)) return value;
+	return DEFAULT_CONFIG;
+}
+
 function writeConfigIfChanged(path: string, config: SideChatConfig): void {
 	const next = serializeConfig(config);
 	if (existsSync(path)) {
@@ -149,7 +166,7 @@ export function loadSideChatConfig(ctx: ExtensionContext): { config: SideChatCon
 	let config = DEFAULT_CONFIG;
 
 	try {
-		const data = readJson(paths.global);
+		const data = migrateLegacyAutoPopulatedConfig(readJson(paths.global));
 		if (data !== undefined) config = mergeConfig(config, data);
 
 		// Keep the global config explicit. If the file is missing, create it with
@@ -164,7 +181,7 @@ export function loadSideChatConfig(ctx: ExtensionContext): { config: SideChatCon
 
 	if (ctx.isProjectTrusted()) {
 		try {
-			const data = readJson(paths.project);
+			const data = migrateLegacyAutoPopulatedConfig(readJson(paths.project));
 			if (data !== undefined) {
 				config = mergeConfig(config, data);
 				// Do not auto-create project config files. If a trusted project already

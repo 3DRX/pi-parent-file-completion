@@ -130,6 +130,7 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 								finishReason = "close";
 							},
 							getTerminalRows: () => tui.terminal.rows,
+							getTerminalColumns: () => tui.terminal.columns,
 							onMerge: (request: MergeRequest) => {
 								if (config.merge.requireParentUnchanged && !parentUnchanged(ctx, parentSnapshot)) {
 									ctx.ui.notify(
