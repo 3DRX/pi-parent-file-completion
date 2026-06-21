@@ -290,6 +290,15 @@ function createParentFileProvider(
 		},
 
 		applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+			// This wrapper delegates most autocomplete to Pi's built-in provider. If
+			// the selected suggestion came from that provider (slash commands, normal
+			// @file completion, command arguments, etc.), its applyCompletion logic must
+			// handle it too. Otherwise slash command completion loses the leading `/`
+			// and the editor submits plain text such as "reload" to the agent.
+			if (!parseParentReference(unquoteAtPrefix(prefix))) {
+				return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+			}
+
 			const currentLine = lines[cursorLine] ?? "";
 			const beforePrefix = currentLine.slice(0, cursorCol - prefix.length);
 			const afterCursor = currentLine.slice(cursorCol);
