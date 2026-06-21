@@ -1,0 +1,129 @@
+# Side chat file-based configuration
+
+`@3drx/pi-side-chat` can read optional JSON configuration from global and project-local files.
+
+## Config file locations
+
+Global config:
+
+```text
+~/.pi/agent/pi-extensions-lab/side-chat.json
+```
+
+Project-local config:
+
+```text
+<project>/.pi/pi-extensions-lab/side-chat.json
+```
+
+Project-local config is only read when the project is trusted by Pi. Project values override global values.
+
+## Default config
+
+```json
+{
+  "panel": {
+    "width": "30%",
+    "maxHeight": "95%",
+    "margin": 1,
+    "maxTranscriptLines": 120
+  },
+  "session": {
+    "deleteOnClose": true,
+    "deleteOnMerge": true
+  },
+  "merge": {
+    "requireParentUnchanged": true
+  }
+}
+```
+
+## Reference
+
+### `panel.width`
+
+Type: number or percentage string  
+Default: `"30%"`
+
+Width of the right-side overlay panel.
+
+Examples:
+
+```json
+{ "panel": { "width": "30%" } }
+```
+
+```json
+{ "panel": { "width": 72 } }
+```
+
+### `panel.maxHeight`
+
+Type: number or percentage string  
+Default: `"95%"`
+
+Maximum overlay height.
+
+### `panel.margin`
+
+Type: non-negative integer  
+Default: `1`
+
+Overlay margin, in terminal cells.
+
+### `panel.maxTranscriptLines`
+
+Type: positive integer  
+Default: `120`
+
+Maximum rendered transcript lines in the side panel. Older lines are hidden from the panel view, but they remain in the side session until it is closed or merged.
+
+### `session.deleteOnClose`
+
+Type: boolean  
+Default: `true`
+
+Delete the temporary side-chat session file when the user closes the panel with `/close`.
+
+### `session.deleteOnMerge`
+
+Type: boolean  
+Default: `true`
+
+Delete the temporary side-chat session file after a successful `/merge`.
+
+### `merge.requireParentUnchanged`
+
+Type: boolean  
+Default: `true`
+
+Require the main session to be unchanged before merging.
+
+The extension snapshots the main session file, leaf id, and entry count when `/side` opens. If any of those values differ at `/merge` time, merge is blocked.
+
+## Example
+
+```json
+{
+  "panel": {
+    "width": "35%",
+    "maxHeight": "90%",
+    "margin": 1,
+    "maxTranscriptLines": 80
+  },
+  "session": {
+    "deleteOnClose": true,
+    "deleteOnMerge": true
+  },
+  "merge": {
+    "requireParentUnchanged": true
+  }
+}
+```
+
+## Notes
+
+- Unknown keys are ignored.
+- Invalid values fall back to defaults.
+- Project-local config requires Pi project trust.
+- Side chats are intended to be ephemeral; disabling deletion is mainly useful for debugging.
