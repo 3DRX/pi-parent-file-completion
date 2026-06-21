@@ -13,15 +13,16 @@ The extension creates a real Pi branched session from the current conversation, 
 
 ## Behavior
 
-- `/side` opens a top-aligned panel flush with the right edge of the terminal.
-- `/side <prompt>` opens the panel and immediately sends `<prompt>` to the side agent.
+- `/side` opens a top-aligned panel flush with the right edge of the terminal, or restores a hidden side panel.
+- `/side <prompt>` opens/restores the panel and immediately sends `<prompt>` to the side agent.
 - The side session is forked from the current active branch using Pi's session tree APIs.
 - The side agent receives additional system instructions that bias it toward read-only exploration.
 - Assistant and user messages render as Markdown with syntax-highlighted code blocks.
 - The input area uses Pi's native editor component, so paste, dictation-style insertion, cursor movement, and multiline editing work like Pi's main editor.
 - Up/down arrows browse previous/following side-chat inputs, like Pi's main editor.
 - Ctrl+Up/Ctrl+Down and mouse-wheel scrolling over the panel control transcript scrollback; Ctrl+Home/Ctrl+End jump to the top/bottom, and `/bottom` jumps back to the latest content.
-- The side chat is ephemeral: its temporary session file is deleted on close/merge by default.
+- Escape hides the side panel without closing or deleting the temporary side session; run `/side` in the main editor to restore it.
+- The side chat is ephemeral: its temporary session file is deleted on explicit `/close` or `/merge` by default.
 - Merge is only allowed when the main session has not changed since the side chat opened.
 
 ## Local side-chat commands
@@ -41,8 +42,8 @@ These commands are typed inside the side-chat panel, not in Pi's main editor:
 |---|---|
 | `/help` | Show local side-chat commands. |
 | `/merge` | Append the side-chat transcript to the main session, then close. |
-| `/close` | Close and delete the side-chat session. |
-| `/close!` | Force close after side effects were detected. |
+| `/close` | Explicitly close and delete the side-chat session. |
+| `/close!` | Force explicit close after side effects were detected. |
 | `/abort` | Abort the currently running side response. |
 | `/bottom` | Jump back to the latest transcript content. |
 

@@ -35,6 +35,7 @@ type SideChatPanelOptions = {
 	done: (reason: PanelFinishReason) => void;
 	onMerge: (request: MergeRequest) => void;
 	onClose: () => void;
+	onHide: () => void;
 	getTerminalRows: () => number;
 	getTerminalColumns: () => number;
 	tui: TUI;
@@ -125,6 +126,7 @@ export class SideChatPanel implements Component, Focusable {
 	private transcriptScrollOffset = 0;
 	private lastRenderWidth = 0;
 	private lastRenderHeight = 0;
+	private mouseEnabled = false;
 	private _focused = false;
 
 	get focused(): boolean {
@@ -148,7 +150,7 @@ export class SideChatPanel implements Component, Focusable {
 		this.editor.onChange = () => this.options.requestRender();
 		this.lines.push({ role: "system", text: "Side chat started. Type /help for local commands." });
 		this.unsubscribe = options.session.subscribe((event) => this.onSessionEvent(event));
-		options.tui.terminal.write(MOUSE_ENABLE_SEQUENCE);
+		this.setMouseEnabled(true);
 		if (options.initialPrompt?.trim()) {
 			queueMicrotask(() => void this.submitPrompt(options.initialPrompt!.trim()));
 		}
@@ -163,7 +165,7 @@ export class SideChatPanel implements Component, Focusable {
 		this.disposed = true;
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
-		this.options.tui.terminal.write(MOUSE_DISABLE_SEQUENCE);
+		this.setMouseEnabled(false);
 	}
 
 	invalidate(): void {
@@ -179,7 +181,7 @@ export class SideChatPanel implements Component, Focusable {
 		}
 
 		if (matchesKey(data, Key.escape)) {
-			void this.close(false);
+			this.options.onHide();
 			return;
 		}
 
@@ -242,7 +244,7 @@ export class SideChatPanel implements Component, Focusable {
 		for (const line of renderedTranscript) lines.push(this.boxLine(line, innerWidth));
 
 		lines.push(this.boxLine("─".repeat(innerWidth), innerWidth));
-		const status = this.running ? "streaming… Ctrl+C abort" : "Enter send · /merge · /close";
+		const status = this.running ? "streaming… Ctrl+C abort · Esc hide" : "Enter send · Esc hide · /close delete";
 		lines.push(this.boxLine(status, innerWidth));
 		for (const line of inputLines) lines.push(this.boxLine(line, innerWidth));
 		lines.push(bottom);
@@ -327,6 +329,26 @@ export class SideChatPanel implements Component, Focusable {
 		await this.submitPrompt(value);
 	}
 
+	submitExternalPrompt(prompt: string): void {
+		const text = prompt.trim();
+		if (!text) return;
+		this.editor.addToHistory(text);
+		this.editor.setText("");
+		this.transcriptScrollOffset = 0;
+		void this.submitPrompt(text);
+		this.options.requestRender();
+	}
+
+	setTemporarilyHidden(hidden: boolean): void {
+		this.setMouseEnabled(!hidden);
+	}
+
+	private setMouseEnabled(enabled: boolean): void {
+		if (this.mouseEnabled === enabled) return;
+		this.mouseEnabled = enabled;
+		this.options.tui.terminal.write(enabled ? MOUSE_ENABLE_SEQUENCE : MOUSE_DISABLE_SEQUENCE);
+	}
+
 	private scrollTranscript(delta: number): void {
 		this.transcriptScrollOffset = Math.max(0, this.transcriptScrollOffset + delta);
 		this.options.requestRender();
@@ -369,6 +391,7 @@ export class SideChatPanel implements Component, Focusable {
 					"/abort  abort the current side response",
 					"/bottom jump to latest transcript content",
 					"/help   show this help",
+					"Esc hides the panel without closing it; run /side in the main editor to restore.",
 					"Keys: ↑/↓ browse input history; Ctrl+↑/Ctrl+↓ scroll transcript; Ctrl+Home/Ctrl+End jump transcript; mouse wheel scrolls when hovering the panel.",
 				].join("\n"));
 				break;

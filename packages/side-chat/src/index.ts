@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { OverlayHandle } from "@earendil-works/pi-tui";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -71,14 +72,30 @@ function buildMergeMarkdown(transcriptMarkdown: string): string {
 	return `## Side chat merged\n\n${transcriptMarkdown}`;
 }
 
+type ActiveSideChat = {
+	panel: SideChatPanel;
+	handle?: OverlayHandle;
+	hidden: boolean;
+	restore: (prompt?: string) => void;
+};
+
+let activeSideChat: ActiveSideChat | undefined;
+
 export default function sideChatExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("side", {
-		description: "Open an ephemeral side chat forked from the current conversation",
+		description: "Open or restore an ephemeral side chat forked from the current conversation",
 		handler: async (args, ctx) => {
 			if (ctx.mode !== "tui") {
 				ctx.ui.notify("/side requires interactive TUI mode", "error");
 				return;
 			}
+
+			const existing = activeSideChat;
+			if (existing) {
+				existing.restore(args.trim() || undefined);
+				return;
+			}
+
 			if (!ctx.model) {
 				ctx.ui.notify("/side requires a selected model", "error");
 				return;
@@ -91,6 +108,7 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 			const { manager: sideSessionManager, file: initialSideFile } = createSideSessionManager(ctx);
 			let sideSessionFile = initialSideFile;
 			let panel: SideChatPanel | undefined;
+			let overlayHandle: OverlayHandle | undefined;
 			let finishReason: PanelFinishReason = "close";
 			let merged = false;
 
@@ -129,6 +147,12 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 							onClose: () => {
 								finishReason = "close";
 							},
+							onHide: () => {
+								panel?.setTemporarilyHidden(true);
+								overlayHandle?.setHidden(true);
+								if (activeSideChat) activeSideChat.hidden = true;
+								ctx.ui.notify("Side chat hidden. Run /side to restore it; use /close inside side chat to delete it.", "info");
+							},
 							getTerminalRows: () => tui.terminal.rows,
 							getTerminalColumns: () => tui.terminal.columns,
 							onMerge: (request: MergeRequest) => {
@@ -158,6 +182,18 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 								request.resolve(true);
 							},
 						});
+						activeSideChat = {
+							panel,
+							handle: overlayHandle,
+							hidden: false,
+							restore: (prompt?: string) => {
+								panel?.setTemporarilyHidden(false);
+								overlayHandle?.setHidden(false);
+								overlayHandle?.focus();
+								if (activeSideChat) activeSideChat.hidden = false;
+								if (prompt) panel?.submitExternalPrompt(prompt);
+							},
+						};
 						return panel;
 					},
 					{
@@ -168,9 +204,15 @@ export default function sideChatExtension(pi: ExtensionAPI): void {
 							maxHeight: config.panel.maxHeight,
 							margin: config.panel.margin,
 						},
+						onHandle: (handle) => {
+							overlayHandle = handle;
+							const active = activeSideChat;
+							if (active && active.panel === panel) active.handle = handle;
+						},
 					},
 				);
 			} finally {
+				if (activeSideChat?.panel === panel) activeSideChat = undefined;
 				panel?.dispose();
 				await session.abort().catch(() => undefined);
 				session.dispose();
