@@ -1,4 +1,4 @@
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
 	Editor,
@@ -9,6 +9,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 	type Component,
+	type EditorComponent,
 	type EditorTheme,
 	type Focusable,
 	type TUI,
@@ -27,6 +28,8 @@ type ChatLine = {
 	text: string;
 };
 
+type SideChatEditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
+
 type SideChatPanelOptions = {
 	session: AgentSession;
 	config: SideChatConfig;
@@ -40,6 +43,8 @@ type SideChatPanelOptions = {
 	getTerminalColumns: () => number;
 	tui: TUI;
 	editorTheme: EditorTheme;
+	keybindings: KeybindingsManager;
+	editorFactory?: SideChatEditorFactory;
 };
 
 const MOUSE_ENABLE_SEQUENCE = "\x1b[?1000h\x1b[?1006h";
@@ -116,7 +121,7 @@ function parseMouseWheel(data: string): MouseWheelEvent | undefined {
 
 export class SideChatPanel implements Component, Focusable {
 	private lines: ChatLine[] = [];
-	private readonly editor: Editor;
+	private readonly editor: EditorComponent;
 	private running = false;
 	private currentAssistantIndex: number | undefined;
 	private unsubscribe?: () => void;
@@ -135,14 +140,17 @@ export class SideChatPanel implements Component, Focusable {
 
 	set focused(value: boolean) {
 		this._focused = value;
-		this.editor.focused = value;
+		const focusableEditor = this.editor as EditorComponent & Partial<Focusable>;
+		if ("focused" in focusableEditor) focusableEditor.focused = value;
 	}
 
 	constructor(private readonly options: SideChatPanelOptions) {
-		this.editor = new Editor(options.tui, options.editorTheme, { paddingX: 0, autocompleteMaxVisible: 5 });
+		this.editor = options.editorFactory?.(options.tui, options.editorTheme, options.keybindings) ?? new Editor(options.tui, options.editorTheme, { paddingX: 0, autocompleteMaxVisible: 5 });
+		this.editor.setPaddingX?.(0);
+		this.editor.setAutocompleteMaxVisible?.(5);
 		this.editor.onSubmit = (value) => {
 			const text = value.trim();
-			if (text) this.editor.addToHistory(text);
+			if (text) this.editor.addToHistory?.(text);
 			this.editor.setText("");
 			void this.submit(text);
 			this.options.requestRender();
@@ -181,6 +189,11 @@ export class SideChatPanel implements Component, Focusable {
 		}
 
 		if (matchesKey(data, Key.escape)) {
+			if (this.shouldDelegateEscapeToEditor()) {
+				this.editor.handleInput(data);
+				this.options.requestRender();
+				return;
+			}
 			this.options.onHide();
 			return;
 		}
@@ -332,7 +345,7 @@ export class SideChatPanel implements Component, Focusable {
 	submitExternalPrompt(prompt: string): void {
 		const text = prompt.trim();
 		if (!text) return;
-		this.editor.addToHistory(text);
+		this.editor.addToHistory?.(text);
 		this.editor.setText("");
 		this.transcriptScrollOffset = 0;
 		void this.submitPrompt(text);
@@ -347,6 +360,13 @@ export class SideChatPanel implements Component, Focusable {
 		if (this.mouseEnabled === enabled) return;
 		this.mouseEnabled = enabled;
 		this.options.tui.terminal.write(enabled ? MOUSE_ENABLE_SEQUENCE : MOUSE_DISABLE_SEQUENCE);
+	}
+
+	private shouldDelegateEscapeToEditor(): boolean {
+		const getMode = (this.editor as EditorComponent & { getMode?: () => unknown }).getMode;
+		if (!getMode) return false;
+		const mode = getMode.call(this.editor);
+		return String(mode).toLowerCase() === "insert";
 	}
 
 	private scrollTranscript(delta: number): void {

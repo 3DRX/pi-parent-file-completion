@@ -117,15 +117,19 @@ async function openSideChat(pi: ExtensionAPI, args: string, ctx: ExtensionComman
 		tools: pi.getActiveTools(),
 	});
 
+	const editorFactory = ctx.ui.getEditorComponent();
+
 	try {
 		finishReason = await ctx.ui.custom<PanelFinishReason>(
-			(tui, theme, _keybindings, done) => {
+			(tui, theme, keybindings, done) => {
 				panel = new SideChatPanel({
 					session,
 					config,
 					initialPrompt: args.trim() || undefined,
 					requestRender: () => tui.requestRender(),
 					tui,
+					editorFactory,
+					keybindings,
 					editorTheme: {
 						borderColor: (s: string) => theme.fg("borderMuted", s),
 						selectList: getSelectListTheme(),

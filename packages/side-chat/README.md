@@ -18,10 +18,10 @@ The extension creates a real Pi branched session from the current conversation, 
 - The side session is forked from the current active branch using Pi's session tree APIs.
 - The side agent receives additional system instructions that bias it toward read-only exploration.
 - Assistant and user messages render as Markdown with syntax-highlighted code blocks.
-- The input area uses Pi's native editor component, so paste, dictation-style insertion, cursor movement, and multiline editing work like Pi's main editor.
+- The input area reuses Pi's current main editor component when one is configured, so prompt-editor extensions such as `pi-vim` also apply inside the side panel. Without a custom editor, it falls back to Pi's native editor.
 - Up/down arrows browse previous/following side-chat inputs, like Pi's main editor.
 - Ctrl+Up/Ctrl+Down and mouse-wheel scrolling over the panel control transcript scrollback; Ctrl+Home/Ctrl+End jump to the top/bottom, and `/bottom` jumps back to the latest content.
-- Escape hides the side panel without closing or deleting the temporary side session; run `/side` in the main editor to restore it.
+- Escape hides the side panel without closing or deleting the temporary side session; run `/side` in the main editor to restore it. With a Vim-style editor, Escape first leaves insert mode, then hides the panel from normal mode.
 - The side chat is ephemeral: its temporary session file is deleted on explicit `/close` or `/merge` by default.
 - Merge is only allowed when the main session has not changed since the side chat opened.
 
