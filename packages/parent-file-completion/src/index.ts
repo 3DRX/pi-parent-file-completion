@@ -53,6 +53,13 @@ const DEFAULT_CONFIG: Config = {
 	excludes: new Set(DEFAULT_EXCLUDES),
 };
 
+const SIDE_CHAT_AUTOCOMPLETE_EVENT = "@3drx/pi-side-chat:autocomplete-provider";
+
+type SideChatAutocompleteEvent = {
+	cwd: string;
+	wrap: (factory: (current: AutocompleteProvider) => AutocompleteProvider) => void;
+};
+
 function parsePositiveInteger(value: unknown, fallback: number): number {
 	if (typeof value !== "string" && typeof value !== "number") return fallback;
 	const parsed = Number(value);
@@ -70,6 +77,15 @@ function parseExcludes(value: unknown): Set<string> {
 			.split(",")
 			.map((part) => part.trim())
 			.filter(Boolean),
+	);
+}
+
+function isSideChatAutocompleteEvent(value: unknown): value is SideChatAutocompleteEvent {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as { cwd?: unknown }).cwd === "string" &&
+		typeof (value as { wrap?: unknown }).wrap === "function"
 	);
 }
 
@@ -387,6 +403,11 @@ export default function parentFileCompletion(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		ctx.ui.addAutocompleteProvider((current) => createParentFileProvider(pi, current, ctx.cwd, cache));
+	});
+
+	pi.events.on(SIDE_CHAT_AUTOCOMPLETE_EVENT, (event) => {
+		if (!isSideChatAutocompleteEvent(event)) return;
+		event.wrap((current) => createParentFileProvider(pi, current, event.cwd, cache));
 	});
 
 	pi.on("session_shutdown", () => {

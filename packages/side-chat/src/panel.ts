@@ -1,6 +1,7 @@
 import type { AgentSession, KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import {
+	type AutocompleteProvider,
 	Editor,
 	Key,
 	matchesKey,
@@ -44,6 +45,7 @@ type SideChatPanelOptions = {
 	tui: TUI;
 	editorTheme: EditorTheme;
 	keybindings: KeybindingsManager;
+	autocompleteProvider?: AutocompleteProvider;
 	editorFactory?: SideChatEditorFactory;
 };
 
@@ -51,6 +53,7 @@ const MOUSE_ENABLE_SEQUENCE = "\x1b[?1000h\x1b[?1006h";
 const MOUSE_DISABLE_SEQUENCE = "\x1b[?1006l\x1b[?1000l";
 const TRANSCRIPT_KEY_SCROLL_LINES = 5;
 const TRANSCRIPT_WHEEL_SCROLL_LINES = 3;
+const AUTOCOMPLETE_EXTRA_INPUT_LINES = 6;
 
 type MouseWheelEvent = {
 	direction: "up" | "down";
@@ -148,6 +151,7 @@ export class SideChatPanel implements Component, Focusable {
 		this.editor = options.editorFactory?.(options.tui, options.editorTheme, options.keybindings) ?? new Editor(options.tui, options.editorTheme, { paddingX: 0, autocompleteMaxVisible: 5 });
 		this.editor.setPaddingX?.(0);
 		this.editor.setAutocompleteMaxVisible?.(5);
+		if (options.autocompleteProvider) this.editor.setAutocompleteProvider?.(options.autocompleteProvider);
 		this.editor.onSubmit = (value) => {
 			const text = value.trim();
 			if (text) this.editor.addToHistory?.(text);
@@ -257,7 +261,7 @@ export class SideChatPanel implements Component, Focusable {
 		for (const line of renderedTranscript) lines.push(this.boxLine(line, innerWidth));
 
 		lines.push(this.boxLine("─".repeat(innerWidth), innerWidth));
-		const status = this.running ? "streaming… Ctrl+C abort · Esc hide" : "Enter send · Esc hide · /close delete";
+		const status = this.running ? "streaming… Ctrl+C abort · Esc hide" : "Enter send · Tab complete · Esc hide · /close delete";
 		lines.push(this.boxLine(status, innerWidth));
 		for (const line of inputLines) lines.push(this.boxLine(line, innerWidth));
 		lines.push(bottom);
@@ -306,8 +310,17 @@ export class SideChatPanel implements Component, Focusable {
 	private renderInput(width: number): string[] {
 		const editorLines = this.editor.render(width);
 		const maxInputLines = Math.max(1, this.options.config.panel.maxInputLines);
-		if (editorLines.length <= maxInputLines) return editorLines;
-		return [`… ${editorLines.length - maxInputLines + 1} earlier input line(s)`, ...editorLines.slice(-(maxInputLines - 1))];
+		const maxVisibleLines = this.isAutocompleteShowing()
+			? maxInputLines + AUTOCOMPLETE_EXTRA_INPUT_LINES
+			: maxInputLines;
+		if (editorLines.length <= maxVisibleLines) return editorLines;
+		return [`… ${editorLines.length - maxVisibleLines + 1} earlier input line(s)`, ...editorLines.slice(-(maxVisibleLines - 1))];
+	}
+
+	private isAutocompleteShowing(): boolean {
+		const isShowingAutocomplete = (this.editor as EditorComponent & { isShowingAutocomplete?: () => boolean })
+			.isShowingAutocomplete;
+		return typeof isShowingAutocomplete === "function" && isShowingAutocomplete.call(this.editor);
 	}
 
 	private boxLine(content: string, innerWidth: number): string {
@@ -412,7 +425,7 @@ export class SideChatPanel implements Component, Focusable {
 					"/bottom jump to latest transcript content",
 					"/help   show this help",
 					"Esc hides the panel without closing it; run /side in the main editor to restore.",
-					"Keys: ↑/↓ browse input history; Ctrl+↑/Ctrl+↓ scroll transcript; Ctrl+Home/Ctrl+End jump transcript; mouse wheel scrolls when hovering the panel.",
+					"Keys: Tab autocomplete; ↑/↓ browse input history; Ctrl+↑/Ctrl+↓ scroll transcript; Ctrl+Home/Ctrl+End jump transcript; mouse wheel scrolls when hovering the panel.",
 				].join("\n"));
 				break;
 			case "merge":

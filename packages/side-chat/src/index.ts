@@ -9,6 +9,7 @@ import {
 	getSelectListTheme,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
+import { createSideChatAutocompleteProvider } from "./autocomplete.ts";
 import { loadSideChatConfig } from "./config.ts";
 import { type MergeRequest, type PanelFinishReason, SideChatPanel } from "./panel.ts";
 
@@ -118,6 +119,7 @@ async function openSideChat(pi: ExtensionAPI, args: string, ctx: ExtensionComman
 	});
 
 	const editorFactory = ctx.ui.getEditorComponent();
+	const autocompleteProvider = await createSideChatAutocompleteProvider(pi, ctx);
 
 	try {
 		finishReason = await ctx.ui.custom<PanelFinishReason>(
@@ -130,6 +132,7 @@ async function openSideChat(pi: ExtensionAPI, args: string, ctx: ExtensionComman
 					tui,
 					editorFactory,
 					keybindings,
+					autocompleteProvider,
 					editorTheme: {
 						borderColor: (s: string) => theme.fg("borderMuted", s),
 						selectList: getSelectListTheme(),
