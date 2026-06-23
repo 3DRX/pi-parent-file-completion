@@ -1,0 +1,40 @@
+{
+  "name": "@3drx/pi-tmux-title",
+  "version": "0.1.0",
+  "description": "Pi extension that renames the terminal and tmux window title to pi on startup.",
+  "type": "module",
+  "license": "MIT",
+  "author": "3DRX",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/3DRX/pi-extensions-lab.git",
+    "directory": "packages/tmux-title"
+  },
+  "homepage": "https://github.com/3DRX/pi-extensions-lab/tree/main/packages/tmux-title#readme",
+  "bugs": {
+    "url": "https://github.com/3DRX/pi-extensions-lab/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "tmux",
+    "terminal-title"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

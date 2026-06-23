@@ -39,6 +39,12 @@ importers:
         specifier: '*'
         version: 0.79.9
 
+  packages/tmux-title:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: '*'
+        version: 0.79.9(ws@8.21.0)(zod@4.4.3)
+
 packages:
 
   '@anthropic-ai/sdk@0.91.1':
