@@ -1,5 +1,10 @@
-import type { AgentSession, KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentSessionEvent, KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	getMarkdownTheme,
+	ToolExecutionComponent,
+	UserMessageComponent,
+} from "@earendil-works/pi-coding-agent";
 import {
 	type AutocompleteProvider,
 	Editor,
@@ -24,10 +29,17 @@ export type MergeRequest = {
 	resolve: (accepted: boolean) => void;
 };
 
-type ChatLine = {
-	role: "system" | "user" | "assistant" | "tool" | "error";
-	text: string;
-};
+type AgentMessageForEvent = Extract<AgentSessionEvent, { message: unknown }>["message"];
+type AssistantMessageForComponent = Parameters<AssistantMessageComponent["updateContent"]>[0];
+type ToolExecutionResult = Parameters<ToolExecutionComponent["updateResult"]>[0];
+type ToolCallContent = Extract<AssistantMessageForComponent["content"][number], { type: "toolCall" }>;
+
+type TranscriptItem =
+	| { kind: "system"; text: string }
+	| { kind: "error"; text: string }
+	| { kind: "user"; text: string; component: UserMessageComponent }
+	| { kind: "assistant"; component: AssistantMessageComponent; message?: AssistantMessageForComponent }
+	| { kind: "tool"; toolCallId: string; toolName: string; component: ToolExecutionComponent; resultText?: string; isError?: boolean };
 
 type SideChatEditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
 
@@ -61,17 +73,53 @@ type MouseWheelEvent = {
 	y: number;
 };
 
-function normalizeAssistantDelta(event: unknown): string | undefined {
-	if (!event || typeof event !== "object") return undefined;
-	const e = event as { type?: unknown; delta?: unknown };
-	if ((e.type === "text_delta" || e.type === "thinking_delta") && typeof e.delta === "string") return e.delta;
-	return undefined;
-}
-
 function toolNameFromEvent(event: unknown): string {
 	if (!event || typeof event !== "object") return "tool";
 	const e = event as { toolName?: unknown };
 	return typeof e.toolName === "string" ? e.toolName : "tool";
+}
+
+function getUserMessageText(message: AgentMessageForEvent): string | undefined {
+	if (!message || typeof message !== "object") return undefined;
+	const content = (message as { content?: unknown }).content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return undefined;
+	const text = content
+		.map((part) => {
+			if (!part || typeof part !== "object") return "";
+			const p = part as { type?: unknown; text?: unknown };
+			return p.type === "text" && typeof p.text === "string" ? p.text : "";
+		})
+		.filter(Boolean)
+		.join("\n");
+	return text || undefined;
+}
+
+function isToolCallContent(content: AssistantMessageForComponent["content"][number]): content is ToolCallContent {
+	return content.type === "toolCall";
+}
+
+function assistantMessageText(message: AssistantMessageForComponent | undefined): string {
+	if (!message) return "";
+	return message.content
+		.map((content) => {
+			if (content.type === "text") return content.text;
+			if (content.type === "thinking") return `_Thinking:_\n\n${content.thinking}`;
+			return "";
+		})
+		.filter((text) => text.trim())
+		.join("\n\n");
+}
+
+function toolResultText(result: ToolExecutionResult): string {
+	return result.content
+		.map((content) => {
+			if (content.type === "text") return content.text ?? "";
+			if (content.type === "image") return `[image: ${content.mimeType ?? "unknown"}]`;
+			return "";
+		})
+		.filter(Boolean)
+		.join("\n");
 }
 
 function resolveSize(value: number | `${number}%`, total: number): number {
@@ -123,10 +171,11 @@ function parseMouseWheel(data: string): MouseWheelEvent | undefined {
 }
 
 export class SideChatPanel implements Component, Focusable {
-	private lines: ChatLine[] = [];
+	private transcript: TranscriptItem[] = [];
 	private readonly editor: EditorComponent;
 	private running = false;
-	private currentAssistantIndex: number | undefined;
+	private currentAssistantItem: Extract<TranscriptItem, { kind: "assistant" }> | undefined;
+	private pendingTools = new Map<string, ToolExecutionComponent>();
 	private unsubscribe?: () => void;
 	private sideEffects = false;
 	private closeConfirmationArmed = false;
@@ -160,7 +209,7 @@ export class SideChatPanel implements Component, Focusable {
 			this.options.requestRender();
 		};
 		this.editor.onChange = () => this.options.requestRender();
-		this.lines.push({ role: "system", text: "Side chat started. Type /help for local commands." });
+		this.transcript.push({ kind: "system", text: "Side chat started. Type /help for local commands." });
 		this.unsubscribe = options.session.subscribe((event) => this.onSessionEvent(event));
 		this.setMouseEnabled(true);
 		if (options.initialPrompt?.trim()) {
@@ -182,6 +231,9 @@ export class SideChatPanel implements Component, Focusable {
 
 	invalidate(): void {
 		this.editor.invalidate();
+		for (const item of this.transcript) {
+			if ("component" in item) item.component.invalidate();
+		}
 	}
 
 	handleInput(data: string): void {
@@ -277,18 +329,10 @@ export class SideChatPanel implements Component, Focusable {
 
 	private renderTranscript(width: number, viewportHeight: number): string[] {
 		const rawLines: string[] = [];
-		this.lines.forEach((line, index) => {
-			if (index > 0 && (line.role === "user" || line.role === "assistant")) rawLines.push("");
-			const label = this.labelForRole(line.role);
-			const text = line.text || " ";
-			const rendered = this.renderMarkdownText(text, Math.max(1, width - visibleWidth(label)));
-			if (rendered.length === 0) {
-				rawLines.push(label);
-			} else {
-				rawLines.push(`${label}${rendered[0]}`);
-				for (const continuation of rendered.slice(1)) rawLines.push(`${" ".repeat(visibleWidth(label))}${continuation}`);
-			}
-		});
+		for (const item of this.transcript) {
+			if (item.kind === "user" && rawLines.length > 0) rawLines.push("");
+			rawLines.push(...this.renderTranscriptItem(item, width));
+		}
 
 		const maxOffset = Math.max(0, rawLines.length - viewportHeight);
 		this.transcriptScrollOffset = Math.max(0, Math.min(this.transcriptScrollOffset, maxOffset));
@@ -300,6 +344,18 @@ export class SideChatPanel implements Component, Focusable {
 		if (start > 0 && visible.length > 0) visible[0] = `… ${start} earlier line(s) hidden`;
 		if (end < rawLines.length && visible.length > 0) visible[visible.length - 1] = `… ${rawLines.length - end} later line(s) hidden`;
 		return [...visible, ...Array.from({ length: viewportHeight - visible.length }, () => "")];
+	}
+
+	private renderTranscriptItem(item: TranscriptItem, width: number): string[] {
+		if ("component" in item) return item.component.render(width);
+
+		const label = this.labelForRole(item.kind);
+		const rendered = this.renderMarkdownText(item.text || " ", Math.max(1, width - visibleWidth(label)));
+		if (rendered.length === 0) return [label];
+		return [
+			`${label}${rendered[0]}`,
+			...rendered.slice(1).map((continuation) => `${" ".repeat(visibleWidth(label))}${continuation}`),
+		];
 	}
 
 	private renderMarkdownText(text: string, width: number): string[] {
@@ -329,14 +385,8 @@ export class SideChatPanel implements Component, Focusable {
 		return `│${truncated}${" ".repeat(pad)}│`;
 	}
 
-	private labelForRole(role: ChatLine["role"]): string {
+	private labelForRole(role: "system" | "error"): string {
 		switch (role) {
-			case "user":
-				return "you: ";
-			case "assistant":
-				return "ai:  ";
-			case "tool":
-				return "tool:";
 			case "error":
 				return "err: ";
 			case "system":
@@ -456,18 +506,18 @@ export class SideChatPanel implements Component, Focusable {
 			return;
 		}
 
-		this.lines.push({ role: "user", text: prompt });
 		this.running = true;
-		this.currentAssistantIndex = undefined;
+		this.currentAssistantItem = undefined;
+		this.pendingTools.clear();
 		this.options.requestRender();
 
 		try {
 			await this.options.session.prompt(prompt, { source: "extension" });
 		} catch (error) {
-			this.lines.push({ role: "error", text: error instanceof Error ? error.message : String(error) });
+			this.transcript.push({ kind: "error", text: error instanceof Error ? error.message : String(error) });
 		} finally {
 			this.running = false;
-			this.currentAssistantIndex = undefined;
+			this.currentAssistantItem = undefined;
 			this.options.requestRender();
 		}
 	}
@@ -518,58 +568,149 @@ export class SideChatPanel implements Component, Focusable {
 		this.options.done("close");
 	}
 
-	private onSessionEvent(event: unknown): void {
-		if (!event || typeof event !== "object") return;
-		const e = event as { type?: unknown; assistantMessageEvent?: unknown; isError?: unknown; toolName?: unknown };
-
-		if (e.type === "message_update") {
-			const delta = normalizeAssistantDelta(e.assistantMessageEvent);
-			if (delta) this.appendAssistantDelta(delta);
-		}
-
-		if (e.type === "tool_execution_start") {
-			const toolName = toolNameFromEvent(e);
-			this.lines.push({ role: "tool", text: ` ${toolName} started` });
-		}
-
-		if (e.type === "tool_execution_end") {
-			const toolName = toolNameFromEvent(e);
-			if (toolName === "edit" || toolName === "write" || toolName === "bash") this.sideEffects = true;
-			this.lines.push({ role: e.isError ? "error" : "tool", text: ` ${toolName} ${e.isError ? "failed" : "finished"}` });
+	private onSessionEvent(event: AgentSessionEvent): void {
+		switch (event.type) {
+			case "message_start":
+				this.handleMessageStart(event.message);
+				break;
+			case "message_update":
+				if (event.message.role === "assistant") this.updateAssistantMessage(event.message);
+				break;
+			case "message_end":
+				this.handleMessageEnd(event.message);
+				break;
+			case "tool_execution_start":
+				this.getOrCreateToolComponent(event.toolName, event.toolCallId, event.args).markExecutionStarted();
+				break;
+			case "tool_execution_update": {
+				const component = this.pendingTools.get(event.toolCallId);
+				if (component) component.updateResult({ ...event.partialResult, isError: false }, true);
+				break;
+			}
+			case "tool_execution_end": {
+				const component = this.pendingTools.get(event.toolCallId);
+				if (component) {
+					const result = { ...event.result, isError: event.isError } as ToolExecutionResult;
+					component.updateResult(result);
+					this.rememberToolResult(event.toolCallId, result);
+					this.pendingTools.delete(event.toolCallId);
+				}
+				const toolName = toolNameFromEvent(event);
+				if (toolName === "edit" || toolName === "write" || toolName === "bash") this.sideEffects = true;
+				break;
+			}
 		}
 
 		this.options.requestRender();
 	}
 
-	private appendAssistantDelta(delta: string): void {
-		if (this.currentAssistantIndex === undefined) {
-			this.lines.push({ role: "assistant", text: "" });
-			this.currentAssistantIndex = this.lines.length - 1;
+	private handleMessageStart(message: AgentMessageForEvent): void {
+		if (message.role === "user") {
+			const text = getUserMessageText(message);
+			if (!text) return;
+			this.transcript.push({ kind: "user", text, component: new UserMessageComponent(text, getMarkdownTheme()) });
+			return;
 		}
-		const line = this.lines[this.currentAssistantIndex];
-		if (line) line.text += delta;
+
+		if (message.role === "assistant") {
+			const component = new AssistantMessageComponent(undefined, false, getMarkdownTheme());
+			const item: Extract<TranscriptItem, { kind: "assistant" }> = { kind: "assistant", component, message };
+			this.currentAssistantItem = item;
+			this.transcript.push(item);
+			component.updateContent(message);
+		}
+	}
+
+	private handleMessageEnd(message: AgentMessageForEvent): void {
+		if (message.role !== "assistant") return;
+		this.updateAssistantMessage(message);
+
+		if (message.stopReason === "aborted" || message.stopReason === "error") {
+			const errorMessage = message.stopReason === "aborted" ? "Operation aborted" : message.errorMessage || "Error";
+			for (const [toolCallId, component] of this.pendingTools.entries()) {
+				const result: ToolExecutionResult = { content: [{ type: "text", text: errorMessage }], isError: true };
+				component.updateResult(result);
+				this.rememberToolResult(toolCallId, result);
+			}
+			this.pendingTools.clear();
+		} else {
+			for (const component of this.pendingTools.values()) component.setArgsComplete();
+		}
+
+		this.currentAssistantItem = undefined;
+	}
+
+	private updateAssistantMessage(message: AssistantMessageForComponent): void {
+		let item = this.currentAssistantItem;
+		if (!item) {
+			const component = new AssistantMessageComponent(undefined, false, getMarkdownTheme());
+			item = { kind: "assistant", component, message };
+			this.currentAssistantItem = item;
+			this.transcript.push(item);
+		}
+
+		item.message = message;
+		item.component.updateContent(message);
+
+		for (const content of message.content) {
+			if (isToolCallContent(content)) {
+				const component = this.getOrCreateToolComponent(content.name, content.id, content.arguments);
+				component.updateArgs(content.arguments);
+			}
+		}
+	}
+
+	private getOrCreateToolComponent(toolName: string, toolCallId: string, args: unknown): ToolExecutionComponent {
+		const existing = this.pendingTools.get(toolCallId);
+		if (existing) return existing;
+
+		const component = new ToolExecutionComponent(
+			toolName,
+			toolCallId,
+			args,
+			{ showImages: true, imageWidthCells: 60 },
+			this.options.session.getToolDefinition(toolName),
+			this.options.tui,
+			this.options.session.sessionManager.getCwd(),
+		);
+		const item: Extract<TranscriptItem, { kind: "tool" }> = { kind: "tool", toolCallId, toolName, component };
+		this.transcript.push(item);
+		this.pendingTools.set(toolCallId, component);
+		return component;
+	}
+
+	private rememberToolResult(toolCallId: string, result: ToolExecutionResult): void {
+		const item = this.transcript.find(
+			(item): item is Extract<TranscriptItem, { kind: "tool" }> => item.kind === "tool" && item.toolCallId === toolCallId,
+		);
+		if (!item) return;
+		item.resultText = toolResultText(result);
+		item.isError = result.isError;
 	}
 
 	private addSystem(text: string): void {
-		this.lines.push({ role: "system", text });
+		this.transcript.push({ kind: "system", text });
 	}
 
 	private toMarkdown(): string {
-		const usefulLines = this.lines.filter((line) => line.role === "user" || line.role === "assistant" || line.role === "tool" || line.role === "error");
-		if (usefulLines.length === 0) return "_No side-chat messages._";
-		return usefulLines
-			.map((line) => {
-				switch (line.role) {
+		const usefulItems = this.transcript.filter((item) => item.kind !== "system");
+		if (usefulItems.length === 0) return "_No side-chat messages._";
+		return usefulItems
+			.map((item) => {
+				switch (item.kind) {
 					case "user":
-						return `### User\n\n${line.text}`;
-					case "assistant":
-						return `### Side assistant\n\n${line.text}`;
-					case "tool":
-						return `> Tool: ${line.text}`;
+						return `### User\n\n${item.text}`;
+					case "assistant": {
+						const text = assistantMessageText(item.message);
+						return text ? `### Side assistant\n\n${text}` : "";
+					}
+					case "tool": {
+						const status = item.isError ? "failed" : "finished";
+						const result = item.resultText ? `\n\n${item.resultText}` : "";
+						return `> Tool ${item.toolName} ${status}${result}`;
+					}
 					case "error":
-						return `> Error: ${line.text}`;
-					case "system":
-						return "";
+						return `> Error: ${item.text}`;
 				}
 			})
 			.filter(Boolean)
