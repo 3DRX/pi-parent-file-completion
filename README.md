@@ -10,6 +10,7 @@ This repository is intended to hold small, focused extensions that make coding-a
 |---|---|
 | [`packages/parent-file-completion`](packages/parent-file-completion) | Pi extension that adds fuzzy autocomplete for parent-relative `@../...` file references. |
 | [`packages/side-chat`](packages/side-chat) | Pi extension that adds ephemeral side chats in a right-side overlay panel. |
+| [`packages/tmux-title`](packages/tmux-title) | Pi extension that renames the terminal and tmux window title to `pi` on startup. |
 
 ## Development
 
