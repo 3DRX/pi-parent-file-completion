@@ -1,0 +1,45 @@
+{
+  "name": "@3drx/pi-ask-mode",
+  "version": "0.1.0",
+  "description": "Pi extension that adds an opt-in mode for agent questions with rich multiple-choice UI.",
+  "type": "module",
+  "license": "MIT",
+  "author": "3DRX",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/3DRX/pi-extensions-lab.git",
+    "directory": "packages/ask-mode"
+  },
+  "homepage": "https://github.com/3DRX/pi-extensions-lab/tree/main/packages/ask-mode#readme",
+  "bugs": {
+    "url": "https://github.com/3DRX/pi-extensions-lab/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "ask-mode",
+    "clarifying-questions",
+    "agent-ui"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "typebox": "^1.3.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
